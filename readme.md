@@ -1,5 +1,5 @@
 This is the BIOS flash program for the Skunkboard, with the BIOS code embedded within. For code history,
-look inside STARTUP.S. (Actually, for everything look inside STARTUP.S)
+look inside startup.s. (Actually, for everything look inside startup.s)
 
 The Skunkboard requires LibUSB 0.1 to be available. For Windows, the .lib and header file are provided. 
 For Linux or OSX, you must get these files yourself and set up LibUSB on your system correctly.
