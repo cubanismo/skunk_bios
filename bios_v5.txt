@@ -1,0 +1,24 @@
+-Need two persistent bits, writeable when flashing ROMs but outside of the
+ regions actually containing important ROM data,  to store eeprom chip select
+ for each flash bank.
+ -Skunk BIOS in bank 0 is write-locked such that only the upgrader
+  can write it to prevent accidental BIOS corruption.
+ -In 4MB mode, the BIOS is copied to bank 1 when bank 1 is first booted.
+ -In 6MB mode, the top 2MB are not used.
+
+-Solution Idea:
+ -Reserve top DWORD of BIOS area in Bank 1 as stateful data
+ -Don't overwrite this data when copying BIOS
+ -When flashing either bank in 2MB or 4MB mode, store its corresponding
+  EEPROM chip select bit in this DWORD somewhere.
+  -When flashing in 6MB mode, reserve DWORD just after end of 6MB (2MB into
+  "bank 1") instead.
+ -Before starting program, but after selecting program mode (such that we're
+  able to determine the persistent data DWORD location, per above logic),
+  read this data and set flash bank.
+ -Allow overriding bank on jcp command line as well:
+  -Add a new "start" command that takes a tri-state "EEPROM select" parameter
+   as well: 0 = chip 0, 1 = chip 1, 2 = default.
+  -Add a new "set bank EEPROM chip select" command, which will use the same
+   machinery used by the "flash" command, to set the EEPROM select bit for a
+   given bank without re-flashing a ROM.
