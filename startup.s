@@ -81,6 +81,10 @@
 ;; 
 
 		.include	"jaguar.inc"
+		.include	"skunk.inc"
+
+; Uses this internal skunklib symbol to check console status:
+		.extern		skunkConsoleUp
 		
 RAMLOAD	.equ $1400		
 		
@@ -1600,8 +1604,5 @@ TXTgaveup:
 		.long
 retrycnt:
 		.dc.l	3
-
-		.phrase
-		.include	"../jcp2/jcp/skunk.s"
 
 		.end

@@ -1,5 +1,6 @@
 # Build with high verbosity
 V ?= 2
+ALIGN=p
 include $(JAGSDK)/tools/build/jagdefs.mk
 
 #====================================================================
@@ -23,7 +24,9 @@ jagbjl.cof: STADDR = 1400
 OBJS = startup.o startbjl.o
 PROGS = jagmand.cof jagbjl.cof
 
-jagmand.cof: startup.o
+include $(JAGSDK)/jaguar/skunk/skunk.mk
+
+jagmand.cof: startup.o skunk.o
 	$(LINK) $(LINKFLAGS) -o $@ $^
 	
 jagbjl.cof: startbjl.o
