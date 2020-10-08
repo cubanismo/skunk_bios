@@ -1,38 +1,33 @@
-#====================================================================
-#       Macro & Assembler flags
-#====================================================================
-
-STADDR = 80000
-#MACFLAGS = -fb -i../../include -llist.txt
-MACFLAGS = -fb -i../../include
-#ALNFLAGS = -w -v -v -m -e -rd -g -l -a $(STADDR) x 4000
-ALNFLAGS = -w -v -v -e -rd -a $(STADDR) x 4000
-
+# Build with high verbosity
+V ?= 2
+include $(JAGSDK)/tools/build/jagdefs.mk
 
 #====================================================================
-#       Default Rules
+#       Custom Link flags
 #====================================================================
-.SUFFIXES:      .o .s
 
-.s.o:
-	mac $(MACFLAGS) $<
+jagmand.cof: STADDR = 80000
+jagmand.cof: BSSADDR = 4000
+jagbjl.cof: STADDR = 1400
+
+# Output a symbol map
+#jagmand.cof: LINKFLAGS += -m  -l
+
+# Produce an assembly listing after processing input.
+#ASMFLAGS += -llist.txt
 
 #====================================================================
 #       EXECUTABLES
 #====================================================================
 
-OBJ = startup.o
+OBJS = startup.o startbjl.o
+PROGS = jagmand.cof jagbjl.cof
 
-jagmand.cof: $(OBJ)
-	aln $(ALNFLAGS) -o jagmand.cof $(OBJ)
+jagmand.cof: startup.o
+	$(LINK) $(LINKFLAGS) -o $@ $^
 	
 jagbjl.cof: startbjl.o
-	aln -w -v -v -e -rd -a 1400 x x -o startbjl.cof startbjl.o
+	$(LINK) $(LINKFLAGS) -o $@ $^
 
 
-#############################################################################
-
-startup.o: startup.s
-
-clean:
-	$(RM) $(OBJ) jagmand.cof
+include $(JAGSDK)/tools/build/jagrules.mk
