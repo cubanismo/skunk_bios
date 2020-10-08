@@ -22,3 +22,32 @@
   -Add a new "set bank EEPROM chip select" command, which will use the same
    machinery used by the "flash" command, to set the EEPROM select bit for a
    given bank without re-flashing a ROM.
+
+-Notes:
+ -Doesn't appear to be a separate "start" command right now. jcp just sends a
+  dummy flash request instead. Needs more investigation. Want to be able to
+  override the EEPROM chip select via command line without burning it to flash
+  when uploading BJL-style files for development/testing.
+  -Is there some way to always send the chip select value when uploading, but
+   only burn it in when flashing? Do the burning as part of flash setup step
+   in jcp? As new, separate command?
+  -jcp ignores 6MB mode if not needed and boot-only isn't in effect. If there
+   is a separate option to just burn chip select to flash, will likely want
+   to keep 6MB mode enabled (If it affects anything in jcp that matters) for
+   that command line option as well.
+ -Need to ensure chip select data persists across flashes of bank 1 somehow
+  in certain cases:
+  -Flash bank 0: Won't touch bank 1, where chip select bits are stored.
+  -Flash 6MB: There's only going to be one chip select value, and it'll
+   always be written as part of flashing, so there's nothing to preserve
+   here.
+  -Flash bank 1: sectors containing chip select data will be erased!  Chip
+   select data for bank 1 will be written as part of the flash, but need to
+   find a way to save & re-write the chip select data for bank 0.
+ -Need to look at flash data sheet and see if there's a way to erase just the
+  few words used to store the chip select data. Otherwise, it's more or less
+  harmless to erase bank 1's BIOS area, as it gets copied over again whenever
+  it is needed, but it seems wasteful. Would need to see what this means for
+  the 6MB mode, but would probably be similar there: We could just carve out
+  an entire sector. Only thing this might interfere with is autoboot stuff,
+  but none of that exists right now AFAIK.
