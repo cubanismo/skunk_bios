@@ -153,6 +153,12 @@ RAMLOAD	.equ $1400
 ; Well.. actually, we need it now cause we need to force a reset
 ; and we need to reconnect to the console. This means the upgrader
 ; will hang if it can't find the console -- be warned!
+.if ^^defined NO_CONSOLE
+		; Disable the console. Turns all subsequent skunklib commands
+		; (except skunkRESET, skunkRESET6MB) into functional nops
+		; (actual nops, not skunkNOP).
+		move.l		#0,skunkConsoleUp
+.else
 .resetlp:
 		jsr		skunkRESET
 		jsr		skunkNOP
@@ -165,11 +171,17 @@ RAMLOAD	.equ $1400
 		cmp.l	#0,skunkConsoleUp
 		beq		.resetlp
 .endif
+.endif
 ;; end of hacky loop described above
 		
 		move.l	#TXTgreet,a0
 		jsr		skunkCONSOLEWRITE
 		jsr		skunkNOP
+
+.if ^^defined NO_VERIFY
+		; Skip the board version verification checks.
+		bra		.verok
+.endif
 		
 		; Check if the board's got a valid version number,
 		; if not, you need to flash the right version yourself
