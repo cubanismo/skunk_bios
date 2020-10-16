@@ -89,7 +89,8 @@
 RAMLOAD	.equ $1400		
 		
 ; Search for 'upgrade' to find the block to enable upgrade version checking
-; Search for 'v2' to find the differences for the new flash chip	
+; Search for 'BIOS_MAJOR_VERSION > 1' to find the differences for the new flash
+; chip
 		
 		.text
 
@@ -163,8 +164,7 @@ RAMLOAD	.equ $1400
 		jsr		skunkRESET
 		jsr		skunkNOP
 		jsr		skunkNOP
-; 1 is SB v2, 0 is SB v1
-.if 0
+.if BIOS_MAJOR_VERSION < 2
 		nop
 .else
 		jsr		skunkNOP
@@ -199,16 +199,29 @@ RAMLOAD	.equ $1400
 ; This upgrade code ensures we only write the boot flash
 ; if we need to - it checks specifically for known versions.
 ; Checks that the current BIOS matches the known version
-; Use 1 for v2, 0 for v1
-;		bra .verok
-.if 1
+
+.if BIOS_MAJOR_VERSION = 5
+		; Rev 4 board
+		cmp.l	#$00040000,d1
+		beq		.verok
+		; Rev 5 board
+		cmp.l	#$00050000,d1
+		beq		.verok
+.endif
+.if BIOS_MAJOR_VERSION = 4
+		; Rev 4 board
+		cmp.l	#$00040000,d1
+		beq		.verok
+.endif
+.if BIOS_MAJOR_VERSION = 3
 		; Rev 2 board
 		cmp.l	#$00020000,d1
 		beq		.verok
 		; Rev 3 board
 		cmp.l	#$00030000,d1
 		beq		.verok
-.else
+.endif
+.if BIOS_MAJOR_VERSION = 1
 		; Rev 1 board
 		cmp.l	#$00010000,d1
 		beq		.verok
@@ -231,8 +244,7 @@ startover:
 ; Erase boot block
 		move.l	#$FFFC0000, d0		; Debug:  Step 1
 
-; 1 is SB v2, 0 is SB v1
-.if 1
+.if BIOS_MAJOR_VERSION > 1
 		; force bank 0
 		move.w	#$4BA0, (a5)		; Destined For BAnk 0!
 
@@ -293,8 +305,7 @@ startover:
 
 _pgmloop:
 
-; 1 is SB v2, 0 is SB v1
-.if 1
+.if BIOS_MAJOR_VERSION > 1
 		move.w	#$9098, $80036A		; program single word
 		move.w	#$C501, $801C94		
 		move.w	#$8088, $80036A		; A0
@@ -340,8 +351,7 @@ _pgmloop:
 
 _pgmloopc:
 
-; 1 is SB v2, 0 is SB v1
-.if 1
+.if BIOS_MAJOR_VERSION > 1
 		move.w	#$9098, $80036A		; program single word
 		move.w	#$C501, $801C94		
 		move.w	#$8088, $80036A		; A0
@@ -593,8 +603,18 @@ copyblock:
 ; is AFTER these!
 		; code version - remember to track this!
 		; xx.major.minor.rev
-; SB v3
-		dc.l	$00030002			; v3 Skunkboard
+.if BIOS_MAJOR_VERSION = 5
+		dc.l	$00050000			; v5 Skunkboard
+.endif
+.if BIOS_MAJOR_VERSION = 4
+		dc.l	$00040000			; v4,5 Skunkboard
+.endif
+.if BIOS_MAJOR_VERSION = 3
+		dc.l	$00030002			; v2,3,4,5 Skunkboard
+.endif
+.if BIOS_MAJOR_VERSION = 1
+		dc.l	$00010002			; v1 Skunkboard
+.endif
 		
 		; flasher start in RAM 
 		; - Load $3ff0 with a longword of number of blocks to flash (only 62 or 30 are valid)

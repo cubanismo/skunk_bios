@@ -24,17 +24,28 @@
    given bank without re-flashing a ROM.
 
 -Notes:
- -Doesn't appear to be a separate "start" command right now. jcp just sends a
-  dummy flash request instead. Needs more investigation. Want to be able to
-  override the EEPROM chip select via command line without burning it to flash
-  when uploading BJL-style files for development/testing.
+ -Doesn't appear to be a separate "start" command in the BIOS right now. jcp
+  just sends a dummy data upload request instead. Needs more investigation.
+  Want to be able to override the EEPROM chip select via command line without
+  burning it to flash when uploading BJL-style files for development/testing.
+  -Top nibble of start address is reserved for flags. It looks like there is
+   one bit free. Can probably use that to select alternate EEPROM chip when
+   sending start address. This is how the 2nd flash bank and 6MB mode is
+   selected. Alternatively, we can use the last free bit to indicate an extra
+   byte of header data if we only send it on BIOSes that support it or
+   something. Might be able to find other bits in the data header if using
+   this method as well. However, checking board version from jcp is a somewhat
+   heavyweight operation.
   -Is there some way to always send the chip select value when uploading, but
    only burn it in when flashing? Do the burning as part of flash setup step
    in jcp? As new, separate command?
-  -jcp ignores 6MB mode if not needed and boot-only isn't in effect. If there
-   is a separate option to just burn chip select to flash, will likely want
-   to keep 6MB mode enabled (If it affects anything in jcp that matters) for
-   that command line option as well.
+   -Looks like there are some free bits in the flash header data. Can use
+    these to specify whether to flash an EEPROM select bit, and what the
+    bit should be.
+ -jcp ignores 6MB mode if not needed and boot-only isn't in effect. If there
+  is a separate option to just burn chip select to flash, will likely want
+  to keep 6MB mode enabled (If it affects anything in jcp that matters) for
+  that command line option as well.
  -Need to ensure chip select data persists across flashes of bank 1 somehow
   in certain cases:
   -Flash bank 0: Won't touch bank 1, where chip select bits are stored.
@@ -51,3 +62,15 @@
   the 6MB mode, but would probably be similar there: We could just carve out
   an entire sector. Only thing this might interfere with is autoboot stuff,
   but none of that exists right now AFAIK.
+
+-EEPROM Dump/Flash:
+ -Looking at RomDump, it makes a lot of assumptions:
+  -jcp hacks in bank select bit by manually patching the binary. Can do same
+   to select EEPROM chip.
+  -jcp pre-opens the file. This avoids RomDump needing to open the correct
+   file name. Can do the same in EEPROM dumper & flasher.
+  -Other than that, use skunkFILE[READ/WRITE], skunkFILECLOSE, and
+   skunkCONSOLECLOSE as usual.
+  -RomDump is responsible for manually generating the flickery lines on the
+   Jaguar screen to indicate progress/debug hangs. Should copy that code to
+   EEPROM reader.

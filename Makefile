@@ -1,5 +1,5 @@
 # Build with high verbosity
-V ?= 2
+V ?= 1
 ALIGN=p
 include $(JAGSDK)/tools/build/jagdefs.mk
 
@@ -43,6 +43,37 @@ jagbjl.cof: STADDR = 1400
 # Never uncomment this when building a BIOS for inclusion in jcp.
 #ASMFLAGS += -dNO_CONSOLE
 
+# BIOS version to build. Must be 1, 3, 4, or 5, corresponding to the
+# skunkboard PCB revision(s) and feature levels being targeted, as
+# described below.
+#
+# Version 1 only works on Revision 1 boards. I don't know if the BIOS
+# produced with this option actually works on Revision 1 boards, as I
+# don't have one to test on. The source seems to hint it doesn't
+# support producing Rev1-compatible BIOSes anymore, but also still had
+# some ifdef logic in place to support them. Feel free to # give it a
+# try if you have such a board and know what you're doing.
+#
+# Version 3 works with Revision 2, and 4 boards as well. It will also
+# technically work on Revision 5 boards in a pinch, but the EEPROMs
+# won't work on these boards with this BIOS because the GPIOs that
+# select which EEPROM chip to enable will be floating, with the most
+# likely result being neither works.
+#
+# Version 4 is for Revsion 5+ boards with two serial EEPROMs. It
+# properly initializes the GPIO lines to default to the 128B EEPROM,
+# and is otherwise identical to Version 3. A later minor update to
+# this version should allow selecting between each EEPROM using the
+# D-pad left/right buttons before booting a flash bank or uploading
+# code via jcp. This version should work fine on any Revision 2+
+# board, but has no benefit on boards prior to Revision 5.
+#
+# Version 5 is for Revision 5+ boards as well and will feature
+# improved Serial EEPROM selection management (Associating persistent
+# defaults with each bank, hopefully saving/restoring for each bank as
+# well).
+ASMFLAGS += -DBIOS_MAJOR_VERSION=3
+
 #====================================================================
 #       EXECUTABLES
 #====================================================================
@@ -57,6 +88,5 @@ jagmand.cof: startup.o skunk.o
 	
 jagbjl.cof: startbjl.o
 	$(LINK) $(LINKFLAGS) -o $@ $^
-
 
 include $(JAGSDK)/tools/build/jagrules.mk
