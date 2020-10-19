@@ -62,6 +62,16 @@
   the 6MB mode, but would probably be similar there: We could just carve out
   an entire sector. Only thing this might interfere with is autoboot stuff,
   but none of that exists right now AFAIK.
+  -No, there's no way to erase at <sector granularity, and you can't write to
+   no-erased areas.
+  -Additionally, the bank 2 BIOS is in a 64k sector, not an 8k sector, so
+   we'll need to backup and restore the data above 8k. Bleh. Can use the
+   same code to avoid clobbering data outside of our few reserved words.
+ -Can't write EZHost control registers directly via HPI DMA mode. Need to use
+  HPI Mailbox and the LCP (Link Control Protocol) mechanism.
+  -Examples of using HPI mailbox in the usb/main.c program from the skunk
+   full release file.
+  -Wrote up some code to set up GPIO25 & GPIO28 using this as a guide.
 
 -EEPROM Dump/Flash:
  -Looking at RomDump, it makes a lot of assumptions:

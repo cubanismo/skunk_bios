@@ -35,7 +35,9 @@
 ;;  v.3.0.2 - fix for 6MB mode - don't copy BIOS to bank 2 until bank 2 is booted
 ;;          - don't boot bank 2 unless at least first dword looks like a Skunkboard BIOS (so we don't
 ;;            crash on 6MB images.
-;; 
+;;  v.4.0.0 - Disable EZHost UART, configure GPIOs 25 and 28 as outputs, and set GPIO28
+;;            high to select Serial EEPROM 1 at boot on dual-EEPROM SBv5 boards.
+;;
 ;; Testing: (NOTE: this file does not support SBv1!)
 ;; Option	SBv1	SBv2	SBv3
 ;; reset	ok		ok
@@ -750,6 +752,113 @@ calc_vals:
 		move.l	d0, OLP		; not really safe, but works well enough for this
 		move.w	#0, OBF		; in case the OP halted on a GPU interrupt, this should wake it
 		jmp		finalinit-jcpblock+RAMLOAD	; jump over the reset (embedded subroutine)
+
+.if BIOS_MAJOR_VERSION >= 4
+; Write an EZHost control register (address 0xc000 - 0xcfff)
+;
+; !!! Must be called in HPI write mode with a5/a3 = HPI write addr/data
+;
+; Parameters:
+;   d0 - low word:  ezhost control register address
+;   d0 - high word: control register value
+;   a3 - 0x800000 - HPI write data
+;   a5 - 0xC00000 - HPI write address/read data
+;
+; Return:
+;   d0 - zero on success, non-zero on failure
+;
+ezwrctrlreg:
+		; Can't use HPI DMA access to EZHost registers. Need to send LCP (Link
+		; Control Protocol) requests instead, and that means using HPI mailbox
+		; messages, which use two not-very-well documented skunk addressing
+		; "modes". Here's the full list, taken from comments in the Butcher/CPLD
+		; VHDL source:
+		;
+		;   0x4000 = flash read/write, HPI DMA read-only.
+		;   0x4001 = flash read-only, HPI DMA read-only.
+		;   0x4002 = reserved.
+		;   0x4003 = flash 6MB mode. HPI DMA not supported.
+		;   0x4004 = HPI DMA read/write supported (No flash access?).
+		;   0x4005 = HPI Mailbox Register read/write.
+		;   0x4006 = HPI Boot. Pull ezhost boot pins (GPIO30 & GPIO31) low.
+		;   0x4007 = HPI Status Port read (bit 0 = HPI mailbox intr status).
+		;
+		; LCP commands are set up by writing a payload via DMA to some BIOS-
+		; reserved memory locations on the ezhost processor, then the command
+		; is kicked off by writing it to the HPI mailbox register:
+		;
+		; 0x01ba [COMM_PORT_CMD] = command (Write via mailbox reg, not DMA):
+		;  0xfa50 = reset
+		;  0xce00 = jump2code
+		;  0xce04 = call code
+		;  0xce01 = exec int
+		;  0xce02 = read control reg
+		;  0xce03 = write control reg
+		;  0xce08 = read mem (not used on HPI, use DMA)
+		;  0xce09 = write mem (not used on HPI, use DMA)
+		;  0xce05 = read xmem (external mem, not present on skunk)
+		;  0xce06 = write xmem (external mem, not present on skunk)
+		;  0xce07 = config (not used on HPI, configure HSS baud rate)
+		; 0x01bc [COMM_MEM_ADDR] = address (for rd/wr mem, rd/wr ctrl reg, also
+		;                          COMM_BAUD_RATE for cfg cmd.
+		; 0x01be [COMM_MEM_LEN] = length of memory to read/write for rd/wr mem,
+		;                         reg data for rd/wr ctrl reg.
+		; 0x01c0 [COMM_CTRL_REG_LOGIC] = logic op for write ctrl reg, Also
+		;  0x0 = write                   COMM_LAST_DATA, and memory pointer for
+		;  0x1 = AND                     rd/wr xmem.
+		;  0x2 = OR
+		; 0x01c2 [COMM_INTR_NUM] = interrupt number for exec int
+		; 0x01c4 [COMM_R0] = ezhost r0 reg value for exec int
+		; 0x01c6 [COMM_R1] = ezhost r1 reg value for exec int
+		; 0x01c8 [COMM_R2] = ezhost r2 reg value for exec int
+		; 0x01ca [COMM_R3] = ezhost r3 reg value for exec int
+		; 0x01cc [COMM_R4] = ezhost r4 reg value for exec int
+		; 0x01ce [COMM_R5] = ezhost r5 reg value for exec int
+		; 0x01d0 [COMM_R6] = ezhost r6 reg value for exec int
+		; 0x01d2 [COMM_R7] = ezhost r7 reg value for exec int
+		; 0x01d4 [COMM_R8] = ezhost r8 reg value for exec int
+		; 0x01d6 [COMM_R9] = ezhost r9 reg value for exec int
+		; 0x01d8 [COMM_R10] = ezhost r10 reg value for exec int
+		; 0x01da [COMM_R11] = ezhost r11 reg value for exec int
+		; 0x01dc [COMM_R12] = ezhost r12 reg value for exec int
+		; 0x01de [COMM_R13] = ezhost r13 reg value for exec int
+
+		move.l	d1,-(sp)			; Preserve d1
+
+		move.w	#$4005, (a5)		; Enter HPI mailbox mode
+		move.w	(a3), d1			; Read mailbox to clear HPI interrupt
+		move.w	#$4004, (a5)		; Enter HPI write mode
+		move.w	#$01bc, (a5)		; CTRL_REG_ADDR =
+		move.w	d0, (a3)			; d0 low word.
+		swap	d0
+		move.w	d0, (a3)			; CTRL_REG_DATA = d0 high word
+		move.w	#0, (a3)			; CTRL_REG_LOGIC = WRITE
+		move.w	#$4005, (a5)		; Enter HPI mailbox mode
+		move.w	#$ce03, (a3)		; mailbox = CMD_WRITE_CTRL_REG
+		move.w	#$4007, (a5)		; Enter HPI status register mode
+		move.l  #1000, d1			; Poll status register for ~4ms...
+.wrmbox:
+		move.w	(a3), d0
+		btst	#0, d0				; ...or until Mailbox out flag is set.
+		bnz		.rdmbox
+		dbra	d1, .wrmbox
+
+		move.l	#1, d0				; ezhost never responded to mbox write.
+		bra		.mbdone
+.rdmbox:
+		move.w	#$4005, (a5)		; Enter HPI mailbox mode
+		cmp.w	#$0fed, (a3)		; Reading mailbox clears the interrupt.
+		beq		.mboxok				; 0xdead = NAK, 0x0fed = ACK.
+
+		move.l	#2, d0				; ezhost NAKed the register write command
+		bra		.mbdone
+.mboxok:
+		clr.l	d0					; Return success
+.mbdone:
+		move.w	#$4004, (a5)		; Return to HPI write mode
+		move.l	(sp)+, d1			; Restore d1
+		rts
+.endif ; .if BIOS_MAJOR_VERSION >= 4
 		
 ; Complete EZ-HOST reset procedure, including SIE2 debug enable
 ; Sets a3 and a5, destroys d1
@@ -796,6 +905,30 @@ ezreset:
 		move.w	#$8180, $800000		; 0 = 60	; sector lockdown
 		
 		move.w	#$4004, (a5)		; return to HPI write mode
+
+.if BIOS_MAJOR_VERSION >= 4
+		; Select serial EEPROM using GPIO25 & GPIO28 on SBv5.
+		; GPIO28 is shared with the ezhost UART TX line, so the UART must be
+		; disabled first.
+
+		; Disable ezhost UART
+		move.w	#0, d0				; Write 0 to...
+		swap	d0
+		move.w	#$c0e0, d0			; ...UART CTRL Register
+		jsr		ezwrctrlreg-jcpblock+RAMLOAD
+
+		; Set GPIO28 high, GPIO25 low
+		move.w	#$1000, d0			; Write 0x1000 to...
+		swap	d0
+		move.w	#$c024, d0		; ...GPIO data register 1
+		jsr		ezwrctrlreg-jcpblock+RAMLOAD
+
+		; Configure GPIO25 and GPIO28 as outputs
+		move.w	#$1200, d0			; Write 0x1200 to...
+		swap	d0
+		move.w	#$c028, d0			; ...GPIO direction register 1
+		jsr		ezwrctrlreg-jcpblock+RAMLOAD
+.endif
 		rts
 
 finalinit:
@@ -1578,6 +1711,7 @@ CopyBIOS:
 		rts
  
 eof:
+		.print "EOF - copyblock: ",/u/w (eof-copyblock)
 		; useful to know the last used BIOS address - this is not used in the code!
 		dc.l	eof-copyblock+$800800
 		
