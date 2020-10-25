@@ -37,6 +37,8 @@
 ;;            crash on 6MB images.
 ;;  v.4.0.0 - Disable EZHost UART, configure GPIOs 25 and 28 as outputs, and set GPIO28
 ;;            high to select Serial EEPROM 1 at boot on dual-EEPROM SBv5 boards.
+;;          - User can select Serial EEPROM 1 by pressing left, EEPROM 2 by
+;;            pressing right at the boot screen.
 ;;
 ;; Testing: (NOTE: this file does not support SBv1!)
 ;; Option	SBv1	SBv2	SBv3
@@ -1031,6 +1033,38 @@ EnterLoop:
 
 		move.w #$81fe,JOYSTICK	; enable read, audio, nothing on joystick 1, col 0 on joystick 0
 		move.l JOYSTICK,d0		; by doing a long read, we get JOYSTICK and JOYBUTS
+
+.if BIOS_MAJOR_VERSION >= 4
+; V4 - check left for EEPROM 1, right for EEPROM 2
+		btst	#26,d0			; test left
+		bne		.noe2p0			; branch if not pressed
+		move.w	#$1000, d0		; Set GPIO28 high, GPIO25 low
+		move.w	#$ffff, BG		; yellow background as feedback
+		bra		.sete2p
+
+.noe2p0:
+		btst	#27,d0			; test right
+		bne		.noe2p1			; branch if not pressed
+		move.w	#$0200, d0		; Set GPIO28 low, GPIO25 high
+		move.w	#$1234, BG		; purple background as feedback
+
+.sete2p:
+		swap	d0
+		move.w	#$c024, d0		; ...GPIO data register 1
+		move.w	#$4004, (a5)	; Enter HPI write mode
+		jsr		ezwrctrlreg-jcpblock+RAMLOAD
+
+		moveq	#30,d2			; Wait roughly 1s
+.userfbA:
+		move.l	#25000, d1
+.userfeedback:	dbra	d1, .userfeedback
+		dbra	d2, .userfbA
+
+		move.w  #$8FC0, BG		; Restore green background,
+		move.w	#$4001, (a5)	; return to Flash read-only mode,
+		bra		.waitjoy		; and keep waiting.
+.noe2p1:
+.endif ; .if BIOS_MAJOR_VERSION >= 4
 
 ; V2 - check down for bank 2
 		btst	#25,d0			; test down
