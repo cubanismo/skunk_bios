@@ -4,6 +4,14 @@
 ;; This file is for Rev3 only. It may work on Rev2 but probably
 ;; will not be released for that.
 ;;	v.3.0.1 - use high-speed flash mode, remove high voltage options completely
+;; -Added autoboot - top 2MB of flash intended. Start with a signature at $bffff0 (bank 2 on rev 2):
+;;  BFFFF0 - LION
+;;  BFFFF4 - Start address
+;;  This boot is still subject to the security scan and is intended for future use like the USB boot
+;;  It can be bypassed by holding A, if installed.
+;;  v.3.0.2 - fix for 6MB mode - don't copy BIOS to bank 2 until bank 2 is booted
+;;          - don't boot bank 2 unless at least first dword looks like a Skunkboard BIOS (so we don't
+;;            crash on 6MB images.
 
 		.include	"jaguar.inc"
 		
@@ -12,6 +20,9 @@ RAMLOAD	.equ $1400
 		.text
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; Get the ROM up to our full supported speed.
+		move.w	#$187b, $f00000		; 16-bit, 6 cycle I/O, 5 cycle ROM
 
 ; stop the GPU and the DSP
 		move.l	#0,G_CTRL
@@ -96,6 +107,7 @@ calc_vals:
 		move.l	d0, OLP		; not really safe, but works well enough for this
 		move.w	#0, OBF		; in case the OP halted on a GPU interrupt, this should wake it
 		jmp		finalinit	; jump over the reset (embedded subroutine)
+
 		
 ; Complete EZ-HOST reset procedure, including SIE2 debug enable
 ; Sets a3 and a5, destroys d1
@@ -142,6 +154,8 @@ ezreset:
 		move.w	#$8180, $800000		; 0 = 60	; sector lockdown
 		
 		move.w	#$4004, (a5)		; return to HPI write mode
+
+
 		rts
 
 finalinit:
@@ -377,11 +391,7 @@ flasher:
 		; we need to erase just block 0 anyway (it's not locked, and it's 64kbyte)
 		move.l	#$800000, a0
 		jsr		EraseBlockInA0
-		; copy the BIOS over. We know the flasher is at $4100 (it must be as noted below),
-		; so we can safely overwrite higher memory. We also know bank 2 is supposed to be active
-		; We only need 8k anyway, so we'll stick our buffer at the 1MB RAM point.
-		jsr		CopyBIOS
-		; carry on
+		; carry on (NOTE! no bios yet! We'll add it if we boot bank 2)
 		bra.s	.bankset
 		
 .setbank0:
@@ -594,6 +604,55 @@ _gameover:
 ;
 
 startcode:
+; Basically, the confirmed checksums are in bank 0 and may not be in bank 1, either bank may be active
+		; before anything else, we need to check if we are launching the
+		; flash stub - that must be allowed! We'll check every word that matters.
+		; Note: *MUST* load at $4100 and *MUST* follow this exact format
+		move.l	a2,d0			; get address of exe
+		and.l	#$00FFFFFF,d0	; mask off the control byte
+		cmp		#$4100,d0		; test address of stub
+		bne		.notstub
+		move.l	a2,a0			; make a copy
+		cmp.w	#$223c,(a0)		; move.l #xxxxxxxx,d1
+		bne		.notstub
+		addq	#6,a0			; skip 32-bit argument
+		cmp.w	#$21c1,(a0)+	; move.l d1,$3ff0
+		bne		.notstub
+		cmp.l	#$3ff00a81,(a0)+ ; rest of move, eor.l #$xxxxxxxx,d1
+		bne		.notstub
+		cmp.l	#$0000ffff,(a0)+ ; eor data #$ffff
+		bne		.notstub
+		cmp.l	#$21c13ff4,(a0)+ ; move.l d1,$3ff4
+		bne		.notstub
+		cmp.l	#$22790080,(a0)+ ; move.l $800804,a1
+		bne		.notstub
+		cmp.l	#$08044ed1,(a0)+ ; rest of move, jmp (a1)
+		bne		.notstub
+		; it IS the flash stub, so skip over the check
+		
+		; But, we know it's the flash stub, and we know if bank 2 is
+		; up that it's going to read the wrong vector address
+		; so we will cheat and patch it in RAM (we know exactly
+		; what we have). We can't change the stub without breaking
+		; compatibility with the older Skunkboard BIOS.
+		; Just drop the vector read and branch directly
+		; JMP $xxxxxxxx = 4EF9xxxxxxxx
+		move.w	#$4ef9, $4114
+		move.l	#flasher, $4116
+
+		bra		oktolaunch
+
+		; what we want to do here is just check the flash for any of the signatures
+		; If they exist, we fail out and return not-authorized to JCP, which is supposed
+		; to be waiting (if it's not, then too bad). We do this regardless of what
+		; address we are going to launch, to prevent simple tricks from working
+		; around it. 
+		
+		; don't touch A2!! Safe to touch ROM here though.
+		; Of course this is still easily broken by putting a jmp (a2) right up front
+
+.notstub:		
+oktolaunch:
 		; all seems well, go ahead and launch
 		; we write the magic value 0000 into both buffer flags to say so
 		move.l	#$800000, a3		; a3 = HPI write data
@@ -636,6 +695,36 @@ startcode:
 		; set bank 1						
 		move.w	#$4001, (a5)		; set flash read-only mode
 		move.w	#$4BA1, (a5)		; Select bank 1
+		; a little extra check here to make sure there is a BIOS present!
+		move.l	$800000,d0			; check the first dword contains data
+		cmp.l	#$ffffffff,d0		; erased
+		bne		.verifybios			; there is SOMETHING there
+		; copy the BIOS over. Note this overwrites 8k at the 1MB RAM point.
+		jsr		CopyBIOS
+
+.verifybios:
+		; check whether the first word at bank 2 looks like a skunkboard BIOS
+		move.w	#$4001, (a5)		; set flash read-only mode
+		move.w	#$4BA0, (a5)		; Select bank 0
+		move.l	$800000,d0			; get the word
+		move.w	#$4BA1, (a5)		; Select bank 1
+		cmp.l	$800000,d0			; do they match?
+		beq.s	.jmpout				; looks good!
+
+		; no, it's something weird, probably part of a 6MB ROM
+		; switch back to bank 1 (for reset) and back to wait mode.
+		move.w	#$4BA0, (a5)		; Select bank 0
+		; give the user some feedback - we'll go black for a delay and then restart
+		move.w	#$0000, BG			; black background as feedback
+
+		moveq	#30,d2				; Wait roughly 1s
+.userfbA:
+		move.l	#25000, d1
+.userfeedback:	dbra	d1, .userfeedback
+		dbra	d2, .userfbA
+
+;		move.w	#$ffff, BG			; white background as feedback of delay ending
+		bra skipboot
 
 .jmpout:				
 
@@ -645,6 +734,7 @@ startcode:
 		move.l	#INITSTACK,a7	; Set Atari's default stack
 		jsr (a2)
 
+skipboot:
 		; Assume that the code didn't screw with the system (this is meant for
 		; JCP utilities), reset the stack to avoid stack leaks, then go back
 		; to the green screen and wait
@@ -728,6 +818,8 @@ endsigs:
 		; a5 must be set up, exits with bank 2 active
 CopyBIOS:
 		movem.l	d0-d1/a0-a1,-(sp)
+
+		move.w	#$1234, BG			; purple background, in case it hangs
 
 		move.w	#$4000, (a5)		; Enter Flash read/write mode
 		move.w	#$4BA0, (a5)		; now from bank 0

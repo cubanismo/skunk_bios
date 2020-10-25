@@ -630,7 +630,7 @@ _copyboot:	move.l	(a0)+, (a1)+		; Finish copying from DRAM
 .noCDmode:
 ; Get the ROM up to our full supported speed.
 		move.w	#$187b, $f00000		; 16-bit, 6 cycle I/O, 5 cycle ROM
-		
+
 ; stop the GPU and the DSP
 		move.l	#0,G_CTRL
 		move.l	#0,D_CTRL
@@ -1379,9 +1379,9 @@ oktolaunch:
 		move.w	#$4001, (a5)		; set flash read-only mode
 		move.w	#$4BA1, (a5)		; Select bank 1
 		; a little extra check here to make sure there is a BIOS present!
-		move.l $800000,d0				; check the first dword contains data
-		cmp.l #$ffffffff,d0			; erased
-		bne .verifybios					; there is SOMETHING there
+		move.l	$800000,d0			; check the first dword contains data
+		cmp.l	#$ffffffff,d0		; erased
+		bne		.verifybios			; there is SOMETHING there
 		; copy the BIOS over. Note this overwrites 8k at the 1MB RAM point.
 		jsr		CopyBIOS-jcpblock+RAMLOAD
 
@@ -1389,22 +1389,22 @@ oktolaunch:
 		; check whether the first word at bank 2 looks like a skunkboard BIOS
 		move.w	#$4001, (a5)		; set flash read-only mode
 		move.w	#$4BA0, (a5)		; Select bank 0
-		move.l $800000,d0				; get the word
-		move.w  #$4BA1, (a5)		; Select bank 1
-		cmp.l  $800000,d0				; do they match?
-		beq.s .jmpout						; looks good!
-		
+		move.l	$800000,d0			; get the word
+		move.w	#$4BA1, (a5)		; Select bank 1
+		cmp.l	$800000,d0			; do they match?
+		beq.s	.jmpout				; looks good!
+
 		; no, it's something weird, probably part of a 6MB ROM
 		; switch back to bank 1 (for reset) and back to wait mode.
 		move.w	#$4BA0, (a5)		; Select bank 0
 		; give the user some feedback - we'll go black for a delay and then restart
 		move.w	#$0000, BG			; black background as feedback
 
-		moveq		#30,d2					; Wait roughly 1s
-.userfbA:		
+		moveq	#30,d2				; Wait roughly 1s
+.userfbA:
 		move.l	#25000, d1
 .userfeedback:	dbra	d1, .userfeedback
-		dbra d2, .userfbA
+		dbra	d2, .userfbA
 
 ;		move.w	#$ffff, BG			; white background as feedback of delay ending
 		bra skipboot
