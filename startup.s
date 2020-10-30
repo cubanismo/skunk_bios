@@ -39,6 +39,7 @@
 ;;            high to select Serial EEPROM 1 at boot on dual-EEPROM SBv5 boards.
 ;;          - User can select Serial EEPROM 1 by pressing left, EEPROM 2 by
 ;;            pressing right at the boot screen.
+;;          - Preserve the EEPROM selection across the EZHost reset after flashing.
 ;;
 ;; Testing: (NOTE: this file does not support SBv1!)
 ;; Option	SBv1	SBv2	SBv3
@@ -767,7 +768,8 @@ calc_vals:
 ;   a5 - 0xC00000 - HPI write address/read data
 ;
 ; Return:
-;   d0 - zero on success, non-zero on failure
+;   d0 - low word:  zero on success, non-zero on failure
+;   d0 - high word: preserved (new control register value)
 ;
 ezwrctrlreg:
 		; Can't use HPI DMA access to EZHost registers. Need to send LCP (Link
@@ -829,6 +831,8 @@ ezwrctrlreg:
 
 		move.w	#$4005, (a5)		; Enter HPI mailbox mode
 		move.w	(a3), d1			; Read mailbox to clear HPI interrupt
+		move.w	#$ce03, d1			; d1.w = CMD_WRITE_CTRL_REG
+ezcmdcmn:
 		move.w	#$4004, (a5)		; Enter HPI write mode
 		move.w	#$01bc, (a5)		; CTRL_REG_ADDR =
 		move.w	d0, (a3)			; d0 low word.
@@ -836,7 +840,7 @@ ezwrctrlreg:
 		move.w	d0, (a3)			; CTRL_REG_DATA = d0 high word
 		move.w	#0, (a3)			; CTRL_REG_LOGIC = WRITE
 		move.w	#$4005, (a5)		; Enter HPI mailbox mode
-		move.w	#$ce03, (a3)		; mailbox = CMD_WRITE_CTRL_REG
+		move.w	d1, (a3)			; mailbox = CMD_[READ/WRITE]_CTRL_REG
 		move.w	#$4007, (a5)		; Enter HPI status register mode
 		move.l  #1000, d1			; Poll status register for ~4ms...
 .wrmbox:
@@ -855,15 +859,85 @@ ezwrctrlreg:
 		move.l	#2, d0				; ezhost NAKed the register write command
 		bra		.mbdone
 .mboxok:
-		clr.l	d0					; Return success
-.mbdone:
 		move.w	#$4004, (a5)		; Return to HPI write mode
+		move.w	#$01be, (a5)		; Read from CTRL_REG_DATA into d0.w and swap
+		move.w	(a5), d0			; it to the high word. This handles the return
+		swap	d0					; value for reads, and is a no-op for writes.
+		clr.w	d0					; Return success
+.mbdone:
+		move.w	#$4004, (a5)		; Be sure to return in HPI write mode
 		move.l	(sp)+, d1			; Restore d1
+		rts
+
+; Read an EZHost control register (address 0xc000 - 0xcfff)
+;
+; !!! Must be called in HPI write mode with a5/a3 = HPI write addr/data
+;
+; Parameters:
+;   d0 - low word:  ezhost control register address
+;   a3 - 0x800000 - HPI write data
+;   a5 - 0xC00000 - HPI write address/read data
+;
+; Return:
+;   d0 - low word:  zero on success, non-zero on failure
+;   d0 - high word: the register value on success. Undefined on failure.
+;
+ezrdctrlreg:
+		; Reuse much of ezwrctrlreg. The only difference is the value written to
+		; the mailbox to submit the command, which is stored in d1.w.
+		move.l	d1,-(sp)			; Preserve d1
+
+		move.w	#$4005, (a5)		; Enter HPI mailbox mode
+		move.w	(a3), d1			; Read mailbox to clear HPI interrupt
+		move.w	#$ce02, d1			; d1.w = CMD_READ_CTRL_REG
+		bra		ezcmdcmn
+
+; Error check an EZHost control register read or write
+;
+; Validates the return value of ezwrctrlreg or ezrdctrlreg and gives the user about
+; 4 seconds of feedback if they fail:
+;   Brown  - Unresponsive EZHost
+;   Purple - NAKed LPC command
+;   Red    - Unknown return code.
+; Otherwise, it returns immediately.
+;
+; Parameters:
+;   d0.w - ez[wr,rd]ctrlreg return value
+;
+; All registers are preserved
+ezchkctrl:
+		cmp.w	#0, d0			; If zero, return immediately
+		beq		.donechk
+		cmp.w	#2, d0			; Compare against 2
+		blo		.noresp			; less than, not 0, must be 1
+		beq		.nak			; Exactly 2. Else, it's greater than 2.
+		move.w	#$f0ff, BG		; Unknown error. Red background as feedback.
+		bra		.feedback
+.noresp:
+		move.w	#$b743, BG		; No response to cmd. Brown background as feedback.
+		bra		.feedback
+.nak:
+		move.w	#$6050, BG		; Cmd NAKed. Purple background as feedback.
+.feedback:
+		movem.l	d1-d2, -(sp)
+		moveq	#120,d2			; Wait roughly 4s
+.userfbA:
+		move.l	#25000, d1
+.userfeedback:	dbra	d1, .userfeedback
+		dbra	d2, .userfbA
+
+		move.w  #$8fc0, BG		; Restore green background,
+		movem.l	(sp)+, d1-d2
+.donechk:
 		rts
 .endif ; .if BIOS_MAJOR_VERSION >= 4
 		
 ; Complete EZ-HOST reset procedure, including SIE2 debug enable
-; Sets a3 and a5, destroys d1
+;
+; Parameters:
+;   d2 - low word:  Serial EEPROM selection: 0x1000 for 93C46, 0x0200 for 93C86
+;
+; Sets a3 and a5, destroys d1 and d0
 ezreset:
 		move.l	#$800000, a3		; a3 = HPI write data
 		move.l	#$C00000, a5		; a5 = HPI write address, read data
@@ -918,22 +992,26 @@ ezreset:
 		swap	d0
 		move.w	#$c0e0, d0			; ...UART CTRL Register
 		jsr		ezwrctrlreg-jcpblock+RAMLOAD
+		jsr		ezchkctrl-jcpblock+RAMLOAD
 
-		; Set GPIO28 high, GPIO25 low
-		move.w	#$1000, d0			; Write 0x1000 to...
+		; Select desired EEPROM
+		move.w	d2, d0				; Write EERPOM selection to...
 		swap	d0
-		move.w	#$c024, d0		; ...GPIO data register 1
+		move.w	#$c024, d0			; ...GPIO data register 1
 		jsr		ezwrctrlreg-jcpblock+RAMLOAD
+		jsr		ezchkctrl-jcpblock+RAMLOAD
 
 		; Configure GPIO25 and GPIO28 as outputs
 		move.w	#$1200, d0			; Write 0x1200 to...
 		swap	d0
 		move.w	#$c028, d0			; ...GPIO direction register 1
 		jsr		ezwrctrlreg-jcpblock+RAMLOAD
+		jsr		ezchkctrl-jcpblock+RAMLOAD
 .endif
 		rts
 
 finalinit:
+		move.w	#$1000, d2			; Default to the 93C46/128-byte EEPROM on boot
 		jsr		ezreset-jcpblock+RAMLOAD	; now actually DO that reset
 .donelock:
 
@@ -1053,6 +1131,7 @@ EnterLoop:
 		move.w	#$c024, d0		; ...GPIO data register 1
 		move.w	#$4004, (a5)	; Enter HPI write mode
 		jsr		ezwrctrlreg-jcpblock+RAMLOAD
+		jsr		ezchkctrl-jcpblock+RAMLOAD
 
 		moveq	#30,d2			; Wait roughly 1s
 .userfbA:
@@ -1356,7 +1435,14 @@ _eraseloop:	jsr 	EraseBlockInA0-jcpblock+RAMLOAD
 
 		move.w	#$4001, (a5)	; Enter Flash read-only mode
 
-		; reset the flash chip to get out of program mode (preserve A2!)
+		; reset the flash chip to get out of program mode (preserve A2!), but first
+		; read back the current serial EEPROM selection and pass it to the reset
+		; routine in d2.w to preserve it.
+		move.w	#$c024, d0		; Read GPIO data register 1 to d0 high word
+		jsr		ezrdctrlreg-jcpblock+RAMLOAD
+		jsr		ezchkctrl-jcpblock+RAMLOAD
+		swap	d0
+		move.w	d0, d2
 		jsr		ezreset-jcpblock+RAMLOAD	; now actually DO that reset
 
 		; check a2 for return without start flag
