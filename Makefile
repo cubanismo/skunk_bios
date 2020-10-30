@@ -72,7 +72,7 @@ jagbjl.cof: STADDR = 1400
 # improved Serial EEPROM selection management (Associating persistent
 # defaults with each bank, hopefully saving/restoring for each bank as
 # well).
-ASMFLAGS += -DBIOS_MAJOR_VERSION=3
+ASMFLAGS += -DBIOS_MAJOR_VERSION=4
 
 #====================================================================
 #       EXECUTABLES

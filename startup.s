@@ -42,47 +42,62 @@
 ;;          - Preserve the EEPROM selection across the EZHost reset after flashing.
 ;;
 ;; Testing: (NOTE: this file does not support SBv1!)
-;; Option	SBv1	SBv2	SBv3
-;; reset	ok		ok
-;; ram		ok		ok
-;; flash1/2	ok		ok
-;; flash1/4	ok		ok
-;; up		ok		ok
-;; flash2/2	na		ok
-;; flash2/4	na		ok
-;; down		na		ok
-;; flash6	na		ok
-;; a+up		na		ok
-;; wflsh1/2 ok		ok		na
-;; wflsh1/4 ok		ok		na
-;; wflsh2/2	na		ok		na
-;; wflsh2/4	na		ok		na
-;; wflash6	na		ok		na
-;; erase1	ok		ok
-;; erase2	na		ok
-;; dump1	ok		ok		
-;; dump2	na		ok
-;; serial#	ok		ok
-;; upgrade	ok		na
-;; JagCD	ok		ok
-;; BS1		ok		ok
-;; BS1/RAM	ok		ok
-;; BS1/FL2	na		ok
-;; BS1/up	ok		ok
-;; BS1/down	na		ok
-;; Recover1	ok		ok
-;; BS2		na		ok
-;; BS2/RAM	na		ok
-;; BS2/FL1	na		ok
-;; BS2/up	na		ok
-;; BS2/down	na		ok
-;; Recover2	na		ok
-;; Autoboot ok		ok
-;; SkipAuto ok		ok
-;; jcp -n	ok		ok
-;; jcp -b	ok		ok
-;; jcp -2b	na		ok
-;; jcp -6b	na		ok
+;;			(NOTE: I don't have SBv1 or SBv2, no testing there)
+;;			(NOTE: I don't have BS roms, so no testing of lockout/recovery)
+;; Option	SBv3	SBv4	SBv5
+;; reset	ok		ok      ok
+;; ram		ok		ok		ok
+;; flash1/2	ok		ok		ok
+;; flash1/4	ok		ok		ok
+;; up		ok		ok		ok
+;; flash2/2	ok		ok		ok
+;; flash2/4	ok		ok		ok
+;; down		ok		ok		ok
+;; flash6	ok		ok		ok
+;; a+up		ok		ok		ok
+;; left		na		na		ok
+;; right	na		na		ok
+;; wflsh1/2 na		na		na
+;; wflsh1/4 na		na		na
+;; wflsh2/2	na		na		na
+;; wflsh2/4	na		na		na
+;; wflash6	na		na		na
+;; erase1	ok		ok		ok
+;; erase2	ok		ok		ok
+;; dump1	ok		ok		ok
+;; dump2	ok		ok		ok
+;; serial#	ok		ok		ok
+;; upgrade	na		na      ok
+;; JagCD	ok		ok		ok
+;; BS1		na		na		na
+;; BS1/RAM	na		na		na
+;; BS1/FL2	na		na		na
+;; BS1/up	na		na 		na
+;; BS1/down	na		na 		na
+;; Recover1	na		na 		na
+;; BS2		na		na 		na
+;; BS2/RAM	na		na 		na
+;; BS2/FL1	na		na 		na
+;; BS2/up	na		na 		na
+;; BS2/down	na		na 		na
+;; Recover2	na		na 		na
+;; Autoboot ok		ok		ok
+;; SkipAuto ok		ok		ok
+;; jcp...
+;; -n		ok		ok		ok
+;; -b		ok		ok		ok
+;; -2b		ok		ok		ok
+;; -6b		ok		ok		ok
+;; -k 0		na		na		ok
+;; -k 1		na		na		ok
+;; -k 2		na		na		ok
+;; -k 0+fl	na		na		ok
+;; -k 1+fl	na		na		ok
+;; -k 2+fl	na		na		ok
+;; -g 128	na		ok		ok
+;; -g 2048	na		na		ok
+;; -p 128	na		ok		ok
+;; -p 2048	na		na		ok
 ;; 
 
 		.include	"jaguar.inc"
